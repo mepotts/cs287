@@ -43,8 +43,8 @@ function eval_linear_model(W, b)
 		end
 	end
 	
-	print("# correct: ", ncorrect, "\n")
-	print("# total: ", valid_input:size(1), "\n")
+	print("# correct: ", ncorrect)
+	print("# total: ", valid_input:size(1))
 	print("Accuracy: ", ncorrect / valid_input:size(1), "\n")
 end
 
@@ -70,6 +70,45 @@ function print_test_predictions(f, W, b)
 		f:write(predictions[i], '\n')
 	end
 end
+
+function learn_naive_bayes(alpha)
+	local alpha = alpha or 0
+
+	-- Compute the prior
+	local prior = torch.zeros(nclasses)
+	for i = 1, train_output:size(1) do
+		prior[train_output[i]] = prior[train_output[i]] + 1
+	end
+	prior:div(train_output:size(1))
+	local b = torch.log(prior)
+	
+	-- Construct count matrix
+	local F = torch.ones(nclasses, nfeatures):mul(alpha)
+
+	for i = 1, train_input:size(1) do
+		local class = train_output[i]
+		
+		for j = 1, train_input:size(2) do
+			if train_input[i][j] == 1 then -- rest is padding
+				break
+			end
+			
+			local feature = train_input[i][j] - 1
+			F[class][feature] = F[class][feature] + 1
+		end
+	end
+	
+	-- Compute the posterior by normalizing count matrix
+	for i = 1, F:size(1) do
+		local row = F:select(1, i)
+		local row_sum = torch.sum(row)
+		row:div(row_sum)
+	end
+	local W = torch.log(F)
+	-- print(F[{{},{1,11}}])
+	
+	return W, b
+end
 	
 
 function main() 
@@ -94,8 +133,8 @@ function main()
 
    -- Train.
    
+   W, b = learn_naive_bayes(alpha)
    
-
    -- Test.
    eval_linear_model(W, b)
    
