@@ -17,13 +17,10 @@ cmd:option('-lambda', 0, 'L2 regularization value')
 -- note: x is in sparse form
 function predict_class(x, W, b)
 	local y_hat = b:clone()
-	for i = 1, valid_input:size(2) do
-		if x[i] == 1 then -- rest is padding
-			break
-		end
-		
-		local feature = x[i] - 1
-		y_hat:add(W:select(2, feature))
+	local x = x[x:gt(1)]
+	
+	for i = 1, x:size(1) do
+		y_hat:add(W:index(2, x:long()):sum(2))
 	end
 	
 	local _, class = y_hat:max(1) -- get the argmax
@@ -84,17 +81,15 @@ function learn_naive_bayes(alpha)
 	
 	-- Construct count matrix
 	local F = torch.ones(nclasses, nfeatures):mul(alpha)
-
 	for i = 1, train_input:size(1) do
 		local class = train_output[i]
+		local x = train_input[i][train_input[i]:gt(1)]
 		
-		for j = 1, train_input:size(2) do
-			if train_input[i][j] == 1 then -- rest is padding
-				break
+		if x:dim() ~= 0 then
+			for j = 1, x:size(1) do
+				local feature = x[j]
+				F[class][feature] = F[class][feature] + 1
 			end
-			
-			local feature = train_input[i][j] - 1
-			F[class][feature] = F[class][feature] + 1
 		end
 	end
 	
@@ -106,6 +101,41 @@ function learn_naive_bayes(alpha)
 	end
 	local W = torch.log(F)
 	-- print(F[{{},{1,11}}])
+	
+	return W, b
+end
+
+function softmax(x, W, b)
+	-- local z = 
+end
+
+function learn_multiclass_logistic(lambda, m, eta, epochs)
+	local W = torch.zeros(nclasses, nfeatures)
+	local b = torch.zeros(nclasses)
+	
+	local i = 0
+	while i < epochs do
+		local sample = torch.multinomial(torch.ones(train_input:size(1)), m, false)
+		
+		local grad_W = torch.zeros(nclasses, nfeatures)
+		local grad_b = torch.zeros(nclasses)
+		
+		-- for i = 1:sample:size(1) do
+		-- 	local x = train_input[i]
+			
+		-- 	local y_hat = 
+		-- 	local class = train_output[sample[i]]
+		-- 	grad_b[]
+		-- end
+		-- sample
+		-- gradient mean = 0
+		-- for i = 1 to numsamples
+			-- compute loss
+			-- compute gradient
+			-- update gradient mean
+		-- update gradient
+	end
+	
 	
 	return W, b
 end
