@@ -127,10 +127,35 @@ function softmax(x, W, b)
 	return torch.exp(z)
 end
 
-function learn_multiclass_logistic(lambda, m, eta, epochs)
+function multiclass_logistic_gradient(x, class, W, b)
+	local y_hat = softmax(x, W, b)
+	
+	local grad = y_hat
+	grad[class] = grad[class] - 1
+	
+	local grad_W = torch.zeros(nclasses, nfeatures)
+	if x:dim() ~= 0 then
+		for j = 1, x:size(1) do
+			col = grad_W:select(2, x[j])
+			col:add(grad)
+		end
+	end
+	
+	return grad_W, grad
+end
+
+function multiclass_logistic_loss(x, class, W, b)
+	local loss = 0
+	local y_hat = softmax(x, W, b)
+	loss = loss + torch.log(y_hat[class])
+	loss = -loss
+	return loss
+end
+
+function minibatch_sgd(gradient, loss, lambda, m, eta, epochs)
 	local W = torch.zeros(nclasses, nfeatures)
 	local b = torch.zeros(nclasses)
-	
+		
 	local n = 0
 	while n < epochs do
 		print("Iteration", n)
@@ -139,29 +164,25 @@ function learn_multiclass_logistic(lambda, m, eta, epochs)
 		local grad_W_hat = torch.zeros(nclasses, nfeatures)
 		local grad_b_hat = torch.zeros(nclasses)
 		
+		if loss then
+			local L = 0
+			for i = 1, 10000 do
+				local x = train_input[i][train_input[i]:gt(1)]
+				local class = train_output[i]
+				L = L + loss(x, class, W, b)
+			end
+			L = L + lambda / 2 * (torch.sum(torch.pow(torch.norm(W, 2, 1), 2)) + torch.pow(torch.norm(b), 2))
+			print("Est. loss", L)
+		end
+		
 		for i = 1, sample:size(1) do
 			local x = train_input[sample[i]][train_input[sample[i]]:gt(1)]
-			
-			local y_hat = softmax(x, W, b)
 			local class = train_output[sample[i]]
 			
-			-- local grad = torch.ones(nclasses):mul(y_hat)
-			local grad = y_hat
-			grad[class] = grad[class] - 1
-			-- grad:mul(1/m)
+			local grad_W, grad_b = gradient(x, class, W, b)
 			
-			if x:dim() ~= 0 then
-				local grad_W = torch.zeros(nclasses, nfeatures)
-				for j = 1, x:size(1) do
-					col = grad_W:select(2, x[j])
-					col:add(grad)
-				end
-				grad_W:div(m)
-				grad_W_hat:add(grad_W)
-			end
-			
-			grad:div(m)
-			grad_b_hat:add(grad)
+			grad_W_hat:add(grad_W:div(m))
+			grad_b_hat:add(grad_b:div(m))
 		end
 		
 		W:mul(1 - eta * lambda / train_input:size(1))
@@ -175,7 +196,75 @@ function learn_multiclass_logistic(lambda, m, eta, epochs)
 	
 	return W, b
 end
+
+function learn_multiclass_logistic(lambda, m, eta, epochs)
+	local W, b = minibatch_sgd(multiclass_logistic_gradient, multiclass_logistic_loss, 
+		lambda, m, eta, epochs)
+	return W, b
+end
+
+function hinge_gradient(x, class, W, b)
+	local y_hat = b:clone()
+	if x:dim() ~= 0 then
+		for i = 1, x:size(1) do
+			y_hat:add(W:index(2, x:long()):sum(2))
+		end
+	end
 	
+	-- get the max non-true class
+	local mask = torch.ones(nclasses):byte()
+	mask[class] = 0
+	local temp = y_hat:maskedSelect(mask)
+	local _, cprime = temp:max(1)
+	cprime = cprime[1]
+	cprime = (cprime < class) and cprime or (cprime + 1)
+	
+	local grad = torch.zeros(nclasses)
+	if y_hat[class] - y_hat[cprime] < 1 then
+		grad[cprime] = 1
+		grad[class] = -1
+	end
+	
+	local grad_W = torch.zeros(nclasses, nfeatures)
+	if x:dim() ~= 0 then
+		for j = 1, x:size(1) do
+			col = grad_W:select(2, x[j])
+			col:add(grad)
+		end
+	end
+	
+	return grad_W, grad
+end
+
+function hinge_loss(x, class, W, b)
+	local y_hat = b:clone()	
+	if x:dim() ~= 0 then
+		for i = 1, x:size(1) do
+			y_hat:add(W:index(2, x:long()):sum(2))
+		end
+	end
+	
+	-- get the max non-true class
+	local mask = torch.ones(nclasses):byte()
+	mask[class] = 0
+	local temp = y_hat:maskedSelect(mask)
+	local _, cprime = temp:max(1)
+	cprime = cprime[1]
+	cprime = (cprime < class) and cprime or (cprime + 1)
+	
+	if y_hat[class] - y_hat[cprime] > 1 then
+		return 0
+	else
+		return 1 - (y_hat[class] - y_hat[cprime])
+	end
+end
+
+function learn_linear_svm(lambda, m, eta, epochs)
+	local W, b = minibatch_sgd(hinge_gradient, hinge_loss, 
+		lambda, m, eta, epochs)
+	return W, b
+end
+
 
 function main() 
    -- Parse input params
@@ -203,7 +292,7 @@ function main()
    -- Train.
    
    -- W, b = learn_naive_bayes(alpha)
-   W, b = learn_multiclass_logistic(lambda, m, eta, epochs)
+   W, b = learn_linear_svm(lambda, m, eta, epochs)
    
    -- Test.
    eval_linear_model(W, b)
