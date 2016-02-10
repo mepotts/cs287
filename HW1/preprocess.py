@@ -129,10 +129,7 @@ def main(arguments):
     # Dataset name
     train_input, train_output = convert_data(train, word_to_idx, max_sent_len,
                                              dataset)
-    
-    import pdb
-    pdb.set_trace()
-    
+
     if valid:
         valid_input, valid_output = convert_data(valid, word_to_idx, max_sent_len,
                                                  dataset)
@@ -159,4 +156,4 @@ def main(arguments):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    main(sys.argv[1:])
