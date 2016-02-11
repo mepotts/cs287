@@ -11,7 +11,7 @@ import re
 import codecs
 import collections
 
-BIGRAM_LIMIT = 5000
+BIGRAM_LIMIT = 10000
 
 
 def line_to_words(line, dataset):
