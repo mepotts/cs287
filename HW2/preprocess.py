@@ -37,13 +37,13 @@ def convert_data(data_name, word_to_idx, tag_to_idx, window_size):
     lbl = []
     
     with codecs.open(data_name, 'r', encoding="latin-1") as f:
-        words = ["PADDING"] * (window_size / 2)
+        words = [word_to_idx["PADDING"]] * (window_size / 2)
         caps = [0] * (window_size / 2)
-        tags = [None] * (window_size / 2)
+        tags = [-1] * (window_size / 2)
         for line in f:
             if line == "\n":
                 for i in xrange((window_size-1)/2):
-                    words.append("PADDING")
+                    words.append(word_to_idx["PADDING"])
                     caps.append(0)
                     # tags.append(None)
                 for i in xrange(len(words)-window_size+1):
@@ -65,9 +65,9 @@ def convert_data(data_name, word_to_idx, tag_to_idx, window_size):
                 if datum[3][:-1] in tag_to_idx:
                     tags.append(tag_to_idx[datum[3][:-1]])
                 else:
-                    tags.append(None)
+                    tags.append(-1)
     
-    return word_features, caps_features, lbl
+    return np.array(word_features, dtype=np.int32), np.array(caps_features, dtype=np.int32), np.array(lbl, dtype=np.int32)
 
 
 FILE_PATHS = {"PTB": ("data/train.tags.txt",
