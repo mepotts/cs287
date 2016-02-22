@@ -38,20 +38,21 @@ def convert_data(data_name, word_to_idx, tag_to_idx, window_size):
     
     with codecs.open(data_name, 'r', encoding="latin-1") as f:
         words = [word_to_idx["PADDING"]] * (window_size / 2)
-        caps = [0] * (window_size / 2)
+        caps = [2] * (window_size / 2)
         tags = [-1] * (window_size / 2)
         for line in f:
             if line == "\n":
                 for i in xrange((window_size-1)/2):
                     words.append(word_to_idx["PADDING"])
-                    caps.append(0)
+                    caps.append(2)
                     # tags.append(None)
                 for i in xrange(len(words)-window_size+1):
                     word_features.append(words[i:i+window_size])
                     caps_features.append(caps[i:i+window_size])
                     lbl.append(tags[i+(window_size / 2)])
-                words = []
-                caps = []
+                words = [word_to_idx["PADDING"]] * (window_size / 2)
+                caps = [2] * (window_size / 2)
+                tags = [-1] * (window_size / 2)
             else:
                 datum = line.split('\t')
                 word = datum[2]
