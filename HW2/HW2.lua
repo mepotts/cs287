@@ -12,9 +12,13 @@ cmd:option('-classifier', 'nb', 'classifier to use')
 -- Hyperparameters
 -- ...
 cmd:option('-alpha', 0, 'smoothing value')
+cmd:option('-lambda', 0, 'L2 regularization value')
+cmd:option('-m', 32, 'size of minibatch for gradient descent')
+cmd:option('-eta', 0.01, 'learning rate')
+cmd:option('-epochs', 20, 'number of epochs for gradient descent')
 
 
-function predict_class(x_w, x_c, W_w, W_c, b)
+function predict_class_linear(x_w, x_c, W_w, W_c, b)
     local y_hat = b:clone()
     
     for i = 1, x_w:size(1) do
@@ -32,7 +36,7 @@ function eval_linear_model(W_w, W_c, b)
     local ncorrect = 0
 
     for i = 1, valid_words:size(1) do
-        local class = predict_class(valid_words[i], valid_caps[i], W_w, W_c, b)
+        local class = predict_class_linear(valid_words[i], valid_caps[i], W_w, W_c, b)
 
         if class == valid_output[i] then
             ncorrect = ncorrect + 1
@@ -42,6 +46,79 @@ function eval_linear_model(W_w, W_c, b)
     print("# correct: ", ncorrect)
     print("# total: ", valid_words:size(1))
     print("Accuracy: ", ncorrect / valid_words:size(1), "\n")
+end
+
+function predict_class_mlp(x, mlp)
+    local preds = mlp:forward(x)
+    
+    local _, class = preds:max(1) -- get the argmax
+    
+    return class[1]
+end
+
+
+function eval_mlp(mlp)
+    local ncorrect = 0
+
+    for i = 1, valid_words:size(1) do
+        local class = predict_class_mlp(valid_words[i], mlp)
+
+        if class == valid_output[i] then
+            ncorrect = ncorrect + 1
+        end
+    end
+
+    print("# correct: ", ncorrect)
+    print("# total: ", valid_words:size(1))
+    print("Accuracy: ", ncorrect / valid_words:size(1), "\n")
+end
+
+function predict_test_classes_linear(W_w, W_c, b)
+    local predictions = torch.Tensor(test_words:size(1))
+
+    for i = 1, test_words:size(1) do
+        local x_w = test_words[i]
+        local x_c = test_caps[i]
+        local class = predict_class_linear(x_w, x_c, W_w, W_c, b)
+
+        predictions[i] = class
+    end
+
+    return predictions
+end
+
+function print_test_predictions_linear(f, W_w, W_c, b)
+    local f = f or io.stdout
+    f:write("ID", ",", "Class", "\n")
+
+    local predictions = predict_test_classes_linear(W_w, W_c, b)
+    for i = 1, predictions:size(1) do
+        f:write(i, ",", predictions[i], '\n')
+    end
+end
+
+function predict_test_classes_mlp(mlp)
+    local predictions = torch.Tensor(test_words:size(1))
+
+    for i = 1, test_words:size(1) do
+        local x_w = test_words[i]
+        local x_c = test_caps[i]
+        local class = predict_class_mlp(x_w, mlp)
+
+        predictions[i] = class
+    end
+
+    return predictions
+end
+
+function print_test_predictions_mlp(f, mlp)
+    local f = f or io.stdout
+    f:write("ID", ",", "Class", "\n")
+
+    local predictions = predict_test_classes_mlp(mlp)
+    for i = 1, predictions:size(1) do
+        f:write(i, ",", predictions[i], '\n')
+    end
 end
 
 
@@ -93,6 +170,52 @@ function learn_naive_bayes(alpha)
     -- return W, b
 end
 
+function batch_grad_update(mlp, criterion, x, y, learning_rate)
+	mlp:zeroGradParameters()
+	local pred = mlp:forward(x)
+	local err = criterion:forward(pred, y)
+	local t = criterion:backward(pred, y)
+	mlp:backward(x, t)
+	mlp:updateParameters(learning_rate)
+	return err
+end
+
+
+
+function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+	for i = 1, epochs do
+		print("Iteration", i)
+		local perm = torch.randperm(train_words:size(1))
+		
+		local total_err = 0
+		for j = 1, perm:size(1), m do
+			local sample = perm:narrow(1, j, torch.min(torch.Tensor({m, perm:size(1)-j+1}))):long()
+			local x = train_words:index(1, sample)
+			local y = train_output:index(1, sample)
+			
+			local err = batch_grad_update(mlp, criterion, x, y, eta)
+			total_err = total_err + err
+		end
+		print("Loss", total_err/train_words:size(1))
+		eval_mlp(mlp)
+		print()
+	end
+end
+
+
+function learn_multiclass_logistic(lambda, m, eta, epochs)
+	local mlp = nn.Sequential()
+	mlp:add(nn.LookupTable(nfeatures*nwords, nclasses))
+	mlp:add(nn.Sum(1))
+	mlp:add(nn.Add(nclasses))
+	mlp:add(nn.LogSoftMax())
+	local criterion = nn.ClassNLLCriterion()
+	criterion.sizeAverage = false
+	
+	minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+	return mlp
+end
+
 
 
 function main() 
@@ -111,19 +234,36 @@ function main()
 	nwords = f:read('nwords'):all():long()[1]
 	nfeatures = train_words:size(2)
 	ncaps = 4
-    classifier = opt.classifier
-	
+	classifier = opt.classifier
+	lambda = opt.lambda
+	m = opt.m
+	eta = opt.eta
+	epochs = opt.epochs
+
+
 	-- local W_w = torch.DoubleTensor(nclasses, nfeatures)
 	-- local b = torch.DoubleTensor(nclasses)
-	
+
 	-- Train.
 	if classifier == "nb" then
 	    W_w, W_c, b = learn_naive_bayes(alpha)
+	elseif classifier == "logistic" then
+		mlp = learn_multiclass_logistic(lambda, m, eta, epochs)
 	end
-	
-	
+
+
 	-- Test.
-	eval_linear_model(W_w, W_c, b)
+	if classifier == "nb" then
+		eval_linear_model(W_w, W_c, b)
+	    local f_predictions = io.open("predictions.txt", "w")
+	    print_test_predictions_linear(f_predictions, W_w, W_c, b)
+	    f_predictions:close()
+	elseif classifier == "logistic" then
+		eval_mlp(mlp)
+	    local f_predictions = io.open("predictions.txt", "w")
+	    print_test_predictions_mlp(f_predictions, mlp)
+	    f_predictions:close()
+	end
 end
 
 main()
