@@ -22,9 +22,7 @@ function predict_class(x, W, b)
     local y_hat = b:clone()
     local x = x[x:gt(1)]
 
-    for i = 1, x:size(1) do
-        y_hat:add(W:index(2, x:long()):sum(2))
-    end
+    y_hat:add(W:index(2, x:long()):sum(2))
 
     local _, class = y_hat:max(1) -- get the argmax
 
