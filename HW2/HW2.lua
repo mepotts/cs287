@@ -188,6 +188,8 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
         print("Iteration", i)
         local perm = torch.randperm(train_words:size(1))
         
+        perm = perm:narrow(1, 1, 10000)
+        
         local total_err = 0
         for j = 1, perm:size(1), m do
             local sample = perm:narrow(1, j, torch.min(torch.Tensor({m, perm:size(1)-j+1}))):long()
@@ -206,9 +208,9 @@ end
 
 function learn_multiclass_logistic(lambda, m, eta, epochs)
     local mlp = nn.Sequential()
-    mlp:add(nn.LookupTable(nfeatures*nwords, nclasses))
-    mlp:add(nn.Sum(1))
-    mlp:add(nn.Add(nclasses))
+    mlp:add(nn.LookupTable(nfeatures*nwords, nembed))
+    mlp:add(nn.View(nfeatures*nembed))
+    mlp:add(nn.Linear(nfeatures*nembed, nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
@@ -217,6 +219,43 @@ function learn_multiclass_logistic(lambda, m, eta, epochs)
     return mlp
 end
 
+
+function learn_neural_network1(lambda, m, eta, epochs)
+    local mlp = nn.Sequential()
+    mlp:add(nn.LookupTable(nfeatures*nwords, nembed))
+    mlp:add(nn.View(nfeatures*nembed))
+    mlp:add(nn.Linear(nfeatures*nembed, nhidden))
+    mlp:add(nn.HardTanh())
+    mlp:add(nn.Linear(nhidden, nclasses))
+    mlp:add(nn.LogSoftMax())
+    local criterion = nn.ClassNLLCriterion()
+    criterion.sizeAverage = false
+    
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+    return mlp
+end
+
+
+function learn_neural_network2(lambda, m, eta, epochs)
+    local mlp = nn.Sequential()
+    lookup = nn.LookupTable(nfeatures*nwords, nembed)
+    for i = 1, nfeatures do
+        for j = 1, nwords do
+            lookup.weight[(i-1)*nwords + j] = embeddings[j]
+        end
+    end
+    mlp:add(lookup)
+    mlp:add(nn.View(nfeatures*nembed))
+    mlp:add(nn.Linear(nfeatures*nembed, nhidden))
+    mlp:add(nn.HardTanh())
+    mlp:add(nn.Linear(nhidden, nclasses))
+    mlp:add(nn.LogSoftMax())
+    local criterion = nn.ClassNLLCriterion()
+    criterion.sizeAverage = false
+    
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+    return mlp
+end
 
 
 function main() 
@@ -235,7 +274,10 @@ function main()
     nclasses = f:read('nclasses'):all():long()[1]
     nwords = f:read('nwords'):all():long()[1]
     nfeatures = train_words:size(2)
+    nembed = embeddings:size(2)
     ncaps = 4
+    capembed = 5
+    nhidden = 300
     classifier = opt.classifier
     lambda = opt.lambda
     m = opt.m
@@ -257,6 +299,10 @@ function main()
         W_w, W_c, b = learn_naive_bayes(alpha)
     elseif classifier == "logistic" then
         mlp = learn_multiclass_logistic(lambda, m, eta, epochs)
+    elseif classifier == "nn1" then
+        mlp = learn_neural_network1(lambda, m, eta, epochs)
+    elseif classifier == "nn2" then
+        mlp = learn_neural_network2(lambda, m, eta, epochs)
     end
 
     -- Test.
@@ -265,7 +311,7 @@ function main()
         local f_predictions = io.open("predictions.txt", "w")
         print_test_predictions_linear(f_predictions, W_w, W_c, b)
         f_predictions:close()
-    elseif classifier == "logistic" then
+    elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" then
         eval_mlp(mlp)
         local f_predictions = io.open("predictions.txt", "w")
         print_test_predictions_mlp(f_predictions, mlp)

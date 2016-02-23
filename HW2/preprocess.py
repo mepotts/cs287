@@ -120,7 +120,7 @@ def main(arguments):
                 n += 1
             else:
                 print word, "duplicate"
-            if n >= vocab_size:
+            if n > vocab_size:
                 break
     embeddings = np.array(embedding_mat, dtype=np.float32)
 
