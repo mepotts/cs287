@@ -8,6 +8,7 @@ cmd = torch.CmdLine()
 -- Cmd Args
 cmd:option('-datafile', 'PTB.hdf5', 'data file')
 cmd:option('-classifier', 'nb', 'classifier to use')
+cmd:option('-out', '', 'print to file')
 
 -- Hyperparameters
 -- ...
@@ -59,7 +60,8 @@ function eval_mlp(mlp)
     local ncorrect = 0
 
     for i = 1, valid_words:size(1) do
-        local class = predict_class_mlp(valid_words[i], mlp)
+        local x = {valid_words[i], valid_caps[i]}
+        local class = predict_class_mlp(x, mlp)
 
         if class == valid_output[i] then
             ncorrect = ncorrect + 1
@@ -101,7 +103,8 @@ function predict_test_classes_mlp(mlp)
     for i = 1, test_words:size(1) do
         local x_w = test_words[i]
         local x_c = test_caps[i]
-        local class = predict_class_mlp(x_w, mlp)
+        local x = {x_w, x_c}
+        local class = predict_class_mlp(x, mlp)
 
         predictions[i] = class
     end
@@ -185,15 +188,19 @@ end
 
 function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
     for i = 1, epochs do
-        print("Iteration", i)
+        print("Iteration:", i)
+        print("Time:", os.clock())
         local perm = torch.randperm(train_words:size(1))
         
-        perm = perm:narrow(1, 1, 10000)
+        -- Save some computation by downsampling
+        perm = perm:narrow(1, 1, 200000)
         
         local total_err = 0
-        for j = 1, perm:size(1), m do
-            local sample = perm:narrow(1, j, torch.min(torch.Tensor({m, perm:size(1)-j+1}))):long()
-            local x = train_words:index(1, sample)
+        for j = 1, perm:size(1) - m, m do
+            local sample = perm:narrow(1, j, m):long()
+            local x1 = train_words:index(1, sample)
+            local x2 = train_caps:index(1, sample)
+            local x = {x1, x2}
             local y = train_output:index(1, sample)
             
             local err = batch_grad_update(mlp, criterion, x, y, eta)
@@ -208,9 +215,21 @@ end
 
 function learn_multiclass_logistic(lambda, m, eta, epochs)
     local mlp = nn.Sequential()
-    mlp:add(nn.LookupTable(nfeatures*nwords, nembed))
-    mlp:add(nn.View(nfeatures*nembed))
-    mlp:add(nn.Linear(nfeatures*nembed, nclasses))
+
+    local parallel = nn.ParallelTable()
+    local tablewords = nn.Sequential()
+    tablewords:add(nn.LookupTable(nfeatures*nwords, nembed))
+    tablewords:add(nn.View(nfeatures*nembed))
+    parallel:add(tablewords)
+    local capwords = nn.Sequential()
+    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
+    capwords:add(nn.View(nfeatures*capembed))
+    parallel:add(capwords)
+
+    mlp:add(parallel)
+    mlp:add(nn.JoinTable(1, 1))
+
+    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
@@ -222,9 +241,21 @@ end
 
 function learn_neural_network1(lambda, m, eta, epochs)
     local mlp = nn.Sequential()
-    mlp:add(nn.LookupTable(nfeatures*nwords, nembed))
-    mlp:add(nn.View(nfeatures*nembed))
-    mlp:add(nn.Linear(nfeatures*nembed, nhidden))
+
+    local parallel = nn.ParallelTable()
+    local tablewords = nn.Sequential()
+    tablewords:add(nn.LookupTable(nfeatures*nwords, nembed))
+    tablewords:add(nn.View(nfeatures*nembed))
+    parallel:add(tablewords)
+    local capwords = nn.Sequential()
+    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
+    capwords:add(nn.View(nfeatures*capembed))
+    parallel:add(capwords)
+
+    mlp:add(parallel)
+    mlp:add(nn.JoinTable(1, 1))
+
+    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nhidden))
     mlp:add(nn.HardTanh())
     mlp:add(nn.Linear(nhidden, nclasses))
     mlp:add(nn.LogSoftMax())
@@ -238,15 +269,29 @@ end
 
 function learn_neural_network2(lambda, m, eta, epochs)
     local mlp = nn.Sequential()
+
+    local parallel = nn.ParallelTable()
+    local tablewords = nn.Sequential()
+
     lookup = nn.LookupTable(nfeatures*nwords, nembed)
     for i = 1, nfeatures do
         for j = 1, nwords do
             lookup.weight[(i-1)*nwords + j] = embeddings[j]
         end
     end
-    mlp:add(lookup)
-    mlp:add(nn.View(nfeatures*nembed))
-    mlp:add(nn.Linear(nfeatures*nembed, nhidden))
+    tablewords:add(lookup)
+
+    tablewords:add(nn.View(nfeatures*nembed))
+    parallel:add(tablewords)
+    local capwords = nn.Sequential()
+    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
+    capwords:add(nn.View(nfeatures*capembed))
+    parallel:add(capwords)
+
+    mlp:add(parallel)
+    mlp:add(nn.JoinTable(1, 1))
+
+    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nhidden))
     mlp:add(nn.HardTanh())
     mlp:add(nn.Linear(nhidden, nclasses))
     mlp:add(nn.LogSoftMax())
@@ -262,6 +307,7 @@ function main()
     -- Parse input params
     opt = cmd:parse(arg)
     local f = hdf5.open(opt.datafile, 'r')
+    outfile = opt.out
     train_words = f:read("train_input_word_windows"):all()
     train_caps = f:read("train_input_cap_windows"):all()
     train_output = f:read("train_output"):all()
@@ -293,6 +339,8 @@ function main()
 
     -- local W_w = torch.DoubleTensor(nclasses, nfeatures)
     -- local b = torch.DoubleTensor(nclasses)
+    
+    print("Time start:", os.clock())
 
     -- Train.
     if classifier == "nb" then
@@ -305,17 +353,23 @@ function main()
         mlp = learn_neural_network2(lambda, m, eta, epochs)
     end
 
+    print("Time done:", os.clock())
+
     -- Test.
     if classifier == "nb" then
         eval_linear_model(W_w, W_c, b)
-        local f_predictions = io.open("predictions.txt", "w")
-        print_test_predictions_linear(f_predictions, W_w, W_c, b)
-        f_predictions:close()
+        if out then
+            local f_predictions = io.open(out, "w")
+            print_test_predictions_linear(f_predictions, W_w, W_c, b)
+            f_predictions:close()
+        end
     elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" then
         eval_mlp(mlp)
-        local f_predictions = io.open("predictions.txt", "w")
-        print_test_predictions_mlp(f_predictions, mlp)
-        f_predictions:close()
+        if out then
+            local f_predictions = io.open(out, "w")
+            print_test_predictions_mlp(f_predictions, mlp)
+            f_predictions:close()
+        end
     end
 end
 
