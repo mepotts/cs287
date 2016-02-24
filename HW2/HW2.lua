@@ -227,7 +227,7 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
             local err = batch_grad_update(mlp, criterion, x, y, eta, embedlayer)
             total_err = total_err + err
         end
-        print("Loss", total_err/train_words:size(1))
+        print("Loss", total_err/perm:size(1))
         eval_mlp(mlp)
         print()
     end
