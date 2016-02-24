@@ -386,18 +386,14 @@ function main()
     -- Test.
     if classifier == "nb" then
         eval_linear_model(W_w, W_c, b)
-        if outfile then
-            local f_predictions = io.open(outfile, "w")
-            print_test_predictions_linear(f_predictions, W_w, W_c, b)
-            f_predictions:close()
-        end
+        local f_predictions = io.open(outfile, "w")
+        print_test_predictions_linear(f_predictions, W_w, W_c, b)
+        f_predictions:close()
     elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" then
         eval_mlp(mlp)
-        if outfile then
-            local f_predictions = io.open(outfile, "w")
-            print_test_predictions_mlp(f_predictions, mlp)
-            f_predictions:close()
-        end
+        local f_predictions = io.open(outfile, "w")
+        print_test_predictions_mlp(f_predictions, mlp)
+        f_predictions:close()
     end
 end
 
