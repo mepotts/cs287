@@ -14,16 +14,32 @@ cmd:option('-out', '', 'print to file')
 -- ...
 cmd:option('-alpha', 0, 'smoothing value')
 cmd:option('-lambda', 0, 'L2 regularization value')
+cmd:option('-sample', 0, 'Downsample')
 cmd:option('-m', 32, 'size of minibatch for gradient descent')
-cmd:option('-eta', 0.01, 'learning rate')
+cmd:option('-eta', 0.005, 'learning rate')
 cmd:option('-epochs', 20, 'number of epochs for gradient descent')
+cmd:option('-zeroembed', 0, 'zero out embedding gradients')
+
+
+function transform_words(X_w)
+    for i = 1, X_w:size(1) do
+        X_w[i]:long():add(torch.range(0, (nfeatures-1)*nwords, nwords):long())
+    end
+end
+
+
+function transform_caps(X_c)
+    for i = 1, X_c:size(1) do
+        X_c[i]:long():add(torch.range(0, (nfeatures-1)*ncaps, ncaps):long())
+    end
+end
 
 
 function predict_class_linear(x_w, x_c, W_w, W_c, b)
     local y_hat = b:clone()
     
-    y_hat:add(W_w:index(2, torch.range(0, (nfeatures-1)*nwords, nwords):long():add(x_w:long())):sum(2))
-    y_hat:add(W_c:index(2, torch.range(0, (nfeatures-1)*ncaps, ncaps):long():add(x_c:long())):sum(2))
+    y_hat:add(W_w:index(2, x_w:long()):sum(2))
+    y_hat:add(W_c:index(2, x_c:long()):sum(2))
     
     local _, class = y_hat:max(1) -- get the argmax
     
@@ -127,7 +143,7 @@ function learn_naive_bayes(alpha)
     local alpha = alpha or 0
 
     -- Compute the prior
-    print("Prior")
+    print("Prior alpha:", alpha)
     local prior = torch.ones(nclasses):mul(alpha)
     for i = 1, train_output:size(1) do
         prior[train_output[i]] = prior[train_output[i]] + 1
@@ -146,9 +162,9 @@ function learn_naive_bayes(alpha)
         
         for j = 1, nfeatures do
             local feature_w = x_w[j]
-            F_w[class][(j-1)*nwords+feature_w] = F_w[class][(j-1)*nwords+feature_w] + 1
+            F_w[class][feature_w] = F_w[class][feature_w] + 1
             local feature_c = x_c[j]
-            F_c[class][(j-1)*ncaps+feature_c] = F_c[class][(j-1)*ncaps+feature_c] + 1
+            F_c[class][feature_c] = F_c[class][feature_c] + 1
         end
     end
     
@@ -174,26 +190,36 @@ function learn_naive_bayes(alpha)
     -- return W, b
 end
 
-function batch_grad_update(mlp, criterion, x, y, learning_rate)
+
+function batch_grad_update(mlp, criterion, x, y, learning_rate, embedlayer)
     mlp:zeroGradParameters()
     local pred = mlp:forward(x)
     local err = criterion:forward(pred, y)
     local t = criterion:backward(pred, y)
     mlp:backward(x, t)
+    if zeroembed then
+        embedlayer.gradWeight:zero()
+    end
     mlp:updateParameters(learning_rate)
     return err
 end
 
 
-
-function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
+    print("SGD m:", m)
+    print("eta:", eta)
+    print("zeroembed:", zeroembed)
+    print("epochs:", epochs)
+    print("sample:", downsample)
     for i = 1, epochs do
         print("Iteration:", i)
         print("Time:", os.clock())
         local perm = torch.randperm(train_words:size(1))
-        
-        -- Save some computation by downsampling
-        perm = perm:narrow(1, 1, 200000)
+
+        -- Downsample for faster results
+        if downsample then
+            perm = perm:narrow(1, 1, downsample)
+        end
         
         local total_err = 0
         for j = 1, perm:size(1) - m, m do
@@ -203,102 +229,86 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
             local x = {x1, x2}
             local y = train_output:index(1, sample)
             
-            local err = batch_grad_update(mlp, criterion, x, y, eta)
+            local err = batch_grad_update(mlp, criterion, x, y, eta, embedlayer)
             total_err = total_err + err
         end
         print("Loss", total_err/train_words:size(1))
         eval_mlp(mlp)
-        print()
+        prlong()
     end
 end
 
 
-function learn_multiclass_logistic(lambda, m, eta, epochs)
+function getmlp(use_embedding)
     local mlp = nn.Sequential()
 
     local parallel = nn.ParallelTable()
-    local tablewords = nn.Sequential()
-    tablewords:add(nn.LookupTable(nfeatures*nwords, nembed))
-    tablewords:add(nn.View(nfeatures*nembed))
-    parallel:add(tablewords)
-    local capwords = nn.Sequential()
-    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
-    capwords:add(nn.View(nfeatures*capembed))
-    parallel:add(capwords)
+    -- words features
+    local wordtable = nn.Sequential()
+    local wordlookup = nn.LookupTable(nfeatures*nwords, nembed)
+    if use_embedding then
+        for i = 1, nfeatures do
+            for j = 1, nwords do
+                wordlookup.weight[(i-1)*nwords + j] = embeddings[j]
+            end
+        end
+    end
+    wordtable:add(wordlookup)
+    wordtable:add(nn.View(nfeatures*nembed))
+    parallel:add(wordtable)
+
+    -- caps features
+    local captable = nn.Sequential()
+    captable:add(nn.LookupTable(nfeatures*ncaps, nembed_caps))
+    local caplookup = nn.LookupTable(nfeatures*nwords, nembed)
+    captable:add(nn.View(nfeatures*nembed_caps))
+    parallel:add(captable)
 
     mlp:add(parallel)
     mlp:add(nn.JoinTable(1, 1))
+    return mlp, wordlookup, nfeatures * (nembed + nembed_caps)
+end
 
-    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nclasses))
+
+function learn_multiclass_logistic(lambda, m, eta, epochs)
+    local mlp, embed, out_dim = getmlp(false)
+
+    mlp:add(nn.Linear(out_dim, nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
     
-    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
 
 
 function learn_neural_network1(lambda, m, eta, epochs)
-    local mlp = nn.Sequential()
+    local mlp, embed, out_dim = getmlp(false)
 
-    local parallel = nn.ParallelTable()
-    local tablewords = nn.Sequential()
-    tablewords:add(nn.LookupTable(nfeatures*nwords, nembed))
-    tablewords:add(nn.View(nfeatures*nembed))
-    parallel:add(tablewords)
-    local capwords = nn.Sequential()
-    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
-    capwords:add(nn.View(nfeatures*capembed))
-    parallel:add(capwords)
-
-    mlp:add(parallel)
-    mlp:add(nn.JoinTable(1, 1))
-
-    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nhidden))
+    mlp:add(nn.Linear(out_dim, nhidden))
     mlp:add(nn.HardTanh())
     mlp:add(nn.Linear(nhidden, nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
     
-    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
 
 
 function learn_neural_network2(lambda, m, eta, epochs)
-    local mlp = nn.Sequential()
+    local mlp, embed, out_dim = getmlp(true)
 
-    local parallel = nn.ParallelTable()
-    local tablewords = nn.Sequential()
-
-    lookup = nn.LookupTable(nfeatures*nwords, nembed)
-    for i = 1, nfeatures do
-        for j = 1, nwords do
-            lookup.weight[(i-1)*nwords + j] = embeddings[j]
-        end
-    end
-    tablewords:add(lookup)
-
-    tablewords:add(nn.View(nfeatures*nembed))
-    parallel:add(tablewords)
-    local capwords = nn.Sequential()
-    capwords:add(nn.LookupTable(nfeatures*ncaps, capembed))
-    capwords:add(nn.View(nfeatures*capembed))
-    parallel:add(capwords)
-
-    mlp:add(parallel)
-    mlp:add(nn.JoinTable(1, 1))
-
-    mlp:add(nn.Linear(nfeatures*(nembed+capembed), nhidden))
+    mlp:add(nn.Linear(out_dim, nhidden))
     mlp:add(nn.HardTanh())
     mlp:add(nn.Linear(nhidden, nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
     
-    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs)
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
 
@@ -308,6 +318,10 @@ function main()
     opt = cmd:parse(arg)
     local f = hdf5.open(opt.datafile, 'r')
     outfile = opt.out
+
+    print("Reading")
+    print("datafile", opt.datafile)
+
     train_words = f:read("train_input_word_windows"):all()
     train_caps = f:read("train_input_cap_windows"):all()
     train_output = f:read("train_output"):all()
@@ -317,20 +331,34 @@ function main()
     test_words = f:read("test_input_word_windows"):all()
     test_caps = f:read("test_input_cap_windows"):all()
     embeddings = f:read("word_embeddings"):all()
+
     nclasses = f:read('nclasses'):all():long()[1]
     nwords = f:read('nwords'):all():long()[1]
     nfeatures = train_words:size(2)
     nembed = embeddings:size(2)
     ncaps = 4
-    capembed = 5
+
+    print("Transforming")
+
+    transform_words(train_words)
+    transform_caps(train_caps)
+    transform_words(valid_words)
+    transform_caps(valid_caps)
+    transform_words(test_words)
+    transform_caps(test_caps)
+
+    nembed_caps = 5
     nhidden = 300
     classifier = opt.classifier
+    alpha = opt.alpha
     lambda = opt.lambda
+    downsample = opt.sample
     m = opt.m
     eta = opt.eta
     epochs = opt.epochs
+    zeroembed = opt.zeroembed
 
-    print("datafile", opt.datafile)
+    print("train_words", train_words:size(1))
     print("classifier", classifier)
     print("nclasses", nclasses)
     print("nwords", nwords)
@@ -358,15 +386,15 @@ function main()
     -- Test.
     if classifier == "nb" then
         eval_linear_model(W_w, W_c, b)
-        if out then
-            local f_predictions = io.open(out, "w")
+        if outfile then
+            local f_predictions = io.open(outfile, "w")
             print_test_predictions_linear(f_predictions, W_w, W_c, b)
             f_predictions:close()
         end
     elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" then
         eval_mlp(mlp)
-        if out then
-            local f_predictions = io.open(out, "w")
+        if outfile then
+            local f_predictions = io.open(outfile, "w")
             print_test_predictions_mlp(f_predictions, mlp)
             f_predictions:close()
         end
