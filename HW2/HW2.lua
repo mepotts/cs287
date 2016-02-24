@@ -21,17 +21,12 @@ cmd:option('-epochs', 20, 'number of epochs for gradient descent')
 cmd:option('-zeroembed', 0, 'zero out embedding gradients')
 
 
-function transform_words(X_w)
+function transform_words(X_w, nwords)
+    X_w = X_w:long()
     for i = 1, X_w:size(1) do
-        X_w[i]:long():add(torch.range(0, (nfeatures-1)*nwords, nwords):long())
+        X_w[i]:add(torch.range(0, (nfeatures-1)*nwords, nwords):long())
     end
-end
-
-
-function transform_caps(X_c)
-    for i = 1, X_c:size(1) do
-        X_c[i]:long():add(torch.range(0, (nfeatures-1)*ncaps, ncaps):long())
-    end
+    return X_w
 end
 
 
@@ -340,12 +335,13 @@ function main()
 
     print("Transforming")
 
-    transform_words(train_words)
-    transform_caps(train_caps)
-    transform_words(valid_words)
-    transform_caps(valid_caps)
-    transform_words(test_words)
-    transform_caps(test_caps)
+    train_words = transform_words(train_words, nwords)
+    valid_words = transform_words(valid_words, nwords)
+    test_words = transform_words(test_words, nwords)
+
+    train_caps = transform_words(train_caps, ncaps)
+    valid_caps = transform_words(valid_caps, ncaps)
+    test_caps = transform_words(test_caps, ncaps)
 
     nembed_caps = 5
     nhidden = 300
