@@ -259,8 +259,8 @@ function getmlp(use_embedding)
 
     -- caps features
     local captable = nn.Sequential()
-    captable:add(nn.LookupTable(nfeatures*ncaps, nembed_caps))
-    local caplookup = nn.LookupTable(nfeatures*nwords, nembed)
+    local caplookup = nn.LookupTable(nfeatures*ncaps, nembed_caps))
+    captable:add(caplookup)
     captable:add(nn.View(nfeatures*nembed_caps))
     parallel:add(captable)
 
