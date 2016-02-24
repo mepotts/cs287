@@ -192,7 +192,7 @@ function batch_grad_update(mlp, criterion, x, y, learning_rate, embedlayer)
     local err = criterion:forward(pred, y)
     local t = criterion:backward(pred, y)
     mlp:backward(x, t)
-    if zeroembed then
+    if zeroembed > 0 then
         embedlayer.gradWeight:zero()
     end
     mlp:updateParameters(learning_rate)
@@ -212,7 +212,7 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
         local perm = torch.randperm(train_words:size(1))
 
         -- Downsample for faster results
-        if downsample then
+        if downsample > 0 then
             perm = perm:narrow(1, 1, downsample)
         end
         
@@ -248,6 +248,9 @@ function getmlp(use_embedding)
             end
         end
     end
+    for i = 1, nfeatures do
+        wordlookup.weight[(i-1)*nwords + 1]:zero()
+    end
     wordtable:add(wordlookup)
     wordtable:add(nn.View(nfeatures*nembed))
     parallel:add(wordtable)
@@ -255,6 +258,9 @@ function getmlp(use_embedding)
     -- caps features
     local captable = nn.Sequential()
     local caplookup = nn.LookupTable(nfeatures*ncaps, nembed_caps)
+    for i = 1, nfeatures do
+        wordlookup.weight[(i-1)*ncaps + 1]:zero()
+    end
     captable:add(caplookup)
     captable:add(nn.View(nfeatures*nembed_caps))
     parallel:add(captable)
