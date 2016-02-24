@@ -234,7 +234,7 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
         end
         print("Loss", total_err/train_words:size(1))
         eval_mlp(mlp)
-        prlong()
+        print()
     end
 end
 
