@@ -338,6 +338,23 @@ function learn_neural_network2(lambda, m, eta, epochs)
 end
 
 
+function learn_neural_network3(lambda, m, eta, epochs)
+    local mlp, embed, out_dim = getmlp(true)
+
+    mlp:add(nn.Linear(out_dim, nhidden))
+    mlp:add(nn.HardTanh())
+    mlp:add(nn.Linear(nhidden, nhidden2))
+    mlp:add(nn.HardTanh())
+    mlp:add(nn.Linear(nhidden2, nclasses))
+    mlp:add(nn.LogSoftMax())
+    local criterion = nn.ClassNLLCriterion()
+    criterion.sizeAverage = false
+    
+    minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
+    return mlp
+end
+
+
 function main() 
     -- Parse input params
     opt = cmd:parse(arg)
@@ -347,14 +364,14 @@ function main()
     print("Reading")
     print("datafile", opt.datafile)
 
-    train_words = f:read("train_input_word_windows"):all()
-    train_caps = f:read("train_input_cap_windows"):all()
+    train_words = f:read("train_input_word_windows"):all():long()
+    train_caps = f:read("train_input_cap_windows"):all():long()
     train_output = f:read("train_output"):all()
-    valid_words = f:read("valid_input_word_windows"):all()
-    valid_caps = f:read("valid_input_cap_windows"):all()
+    valid_words = f:read("valid_input_word_windows"):all():long()
+    valid_caps = f:read("valid_input_cap_windows"):all():long()
     valid_output = f:read("valid_output"):all()
-    test_words = f:read("test_input_word_windows"):all()
-    test_caps = f:read("test_input_cap_windows"):all()
+    test_words = f:read("test_input_word_windows"):all():long()
+    test_caps = f:read("test_input_cap_windows"):all():long()
     embeddings = f:read("word_embeddings"):all()
 
     nclasses = f:read('nclasses'):all():long()[1]
@@ -363,29 +380,10 @@ function main()
     nembed = embeddings:size(2)
     ncaps = 4
 
-    print("Transforming")
-
-    if classifier == "nb" or classifier == "logistic" then
-        -- Include position as part of the features
-        train_words = transform_words(train_words, nwords)
-        valid_words = transform_words(valid_words, nwords)
-        test_words = transform_words(test_words, nwords)
-
-        train_caps = transform_words(train_caps, ncaps)
-        valid_caps = transform_words(valid_caps, ncaps)
-        test_caps = transform_words(test_caps, ncaps)
-    else
-        train_words = train_words:long()
-        valid_words = valid_words:long()
-        test_words = test_words:long()
-
-        train_caps = train_caps:long()
-        valid_caps = valid_caps:long()
-        test_caps = test_caps:long()
-    end
-
     nembed_caps = 5
     nhidden = 300
+    -- only for nn3
+    nhidden2 = 300
     classifier = opt.classifier
     alpha = opt.alpha
     lambda = opt.lambda
@@ -395,12 +393,27 @@ function main()
     epochs = opt.epochs
     zeroembed = opt.zeroembed
 
+    if classifier == "nb" or classifier == "logistic" then
+        print("Transforming")
+
+        -- Include position as part of the features
+        train_words = transform_words(train_words, nwords)
+        valid_words = transform_words(valid_words, nwords)
+        test_words = transform_words(test_words, nwords)
+
+        train_caps = transform_words(train_caps, ncaps)
+        valid_caps = transform_words(valid_caps, ncaps)
+        test_caps = transform_words(test_caps, ncaps)
+    end
+
     print("train_words", train_words:size(1))
     print("classifier", classifier)
     print("nclasses", nclasses)
-    print("nwords", nwords)
     print("nfeatures", nfeatures)
+    print("nwords", nwords)
     print("ncaps", ncaps)
+    print("nembed", nembed)
+    print("nembed_caps", nembed_caps)
 
     -- local W_w = torch.DoubleTensor(nclasses, nfeatures)
     -- local b = torch.DoubleTensor(nclasses)
@@ -416,6 +429,8 @@ function main()
         mlp = learn_neural_network1(lambda, m, eta, epochs)
     elseif classifier == "nn2" then
         mlp = learn_neural_network2(lambda, m, eta, epochs)
+    elseif classifier == "nn3" then
+        mlp = learn_neural_network3(lambda, m, eta, epochs)
     end
 
     print("Time done:", os.clock())
@@ -426,7 +441,7 @@ function main()
         local f_predictions = io.open(outfile, "w")
         print_test_predictions_linear(f_predictions, W_w, W_c, b)
         f_predictions:close()
-    elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" then
+    elseif classifier == "logistic" or classifier == "nn1" or classifier == "nn2" or classifier == "nn3" then
         eval_mlp(mlp)
         local f_predictions = io.open(outfile, "w")
         print_test_predictions_mlp(f_predictions, mlp)
