@@ -383,7 +383,7 @@ function main()
     nembed_caps = 5
     nhidden = 300
     -- only for nn3
-    nhidden2 = 300
+    nhidden2 = 100
     classifier = opt.classifier
     alpha = opt.alpha
     lambda = opt.lambda
