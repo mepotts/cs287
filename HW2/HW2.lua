@@ -234,47 +234,71 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
 end
 
 
+function getlogistic()
+    local mlp = nn.Sequential()
+
+    local parallel = nn.ParallelTable()
+    -- words features
+    local wordtable = nn.Sequential()
+    local wordlookup = nn.LookupTable(nfeatures*nwords, nclasses)
+    wordlookup.weight[1]:zero()
+    wordtable:add(wordlookup)
+    -- Sum over first out of last 2 dimensions
+    wordtable:add(nn.Sum(1, 2))
+    parallel:add(wordtable)
+
+    -- caps features
+    local captable = nn.Sequential()
+    local caplookup = nn.LookupTable(nfeatures*ncaps, nclasses)
+    captable:add(caplookup)
+    -- Sum over first out of last 2 dimensions
+    captable:add(nn.Sum(1, 2))
+    parallel:add(captable)
+
+    mlp:add(parallel)
+    -- Join over last dimension
+    mlp:add(nn.JoinTable(1, 1))
+    -- Sum over the joined tables
+    mlp:add(nn.View(2, nclasses))
+    mlp:add(nn.Sum(1, 2))
+    return mlp, wordlookup, nclasses
+end
+
+
 function getmlp(use_embedding)
     local mlp = nn.Sequential()
 
     local parallel = nn.ParallelTable()
     -- words features
     local wordtable = nn.Sequential()
-    local wordlookup = nn.LookupTable(nfeatures*nwords, nembed)
+    local wordlookup = nn.LookupTable(nwords, nembed)
     if use_embedding then
-        for i = 1, nfeatures do
-            for j = 1, nwords do
-                wordlookup.weight[(i-1)*nwords + j] = embeddings[j]
-            end
+        for i = 1, nwords do
+            wordlookup.weight[i] = embeddings[i]
         end
     end
-    for i = 1, nfeatures do
-        wordlookup.weight[(i-1)*nwords + 1]:zero()
-    end
+    wordlookup.weight[1]:zero()
     wordtable:add(wordlookup)
     wordtable:add(nn.View(nfeatures*nembed))
     parallel:add(wordtable)
 
     -- caps features
     local captable = nn.Sequential()
-    local caplookup = nn.LookupTable(nfeatures*ncaps, nembed_caps)
-    for i = 1, nfeatures do
-        wordlookup.weight[(i-1)*ncaps + 1]:zero()
-    end
+    local caplookup = nn.LookupTable(ncaps, nembed_caps)
     captable:add(caplookup)
     captable:add(nn.View(nfeatures*nembed_caps))
     parallel:add(captable)
 
     mlp:add(parallel)
+    -- Join over last dimension
     mlp:add(nn.JoinTable(1, 1))
     return mlp, wordlookup, nfeatures * (nembed + nembed_caps)
 end
 
 
 function learn_multiclass_logistic(lambda, m, eta, epochs)
-    local mlp, embed, out_dim = getmlp(false)
+    local mlp, embed, out_dim = getlogistic()
 
-    mlp:add(nn.Linear(out_dim, nclasses))
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
@@ -341,13 +365,24 @@ function main()
 
     print("Transforming")
 
-    train_words = transform_words(train_words, nwords)
-    valid_words = transform_words(valid_words, nwords)
-    test_words = transform_words(test_words, nwords)
+    if classifier == "nb" or classifier == "logistic" then
+        -- Include position as part of the features
+        train_words = transform_words(train_words, nwords)
+        valid_words = transform_words(valid_words, nwords)
+        test_words = transform_words(test_words, nwords)
 
-    train_caps = transform_words(train_caps, ncaps)
-    valid_caps = transform_words(valid_caps, ncaps)
-    test_caps = transform_words(test_caps, ncaps)
+        train_caps = transform_words(train_caps, ncaps)
+        valid_caps = transform_words(valid_caps, ncaps)
+        test_caps = transform_words(test_caps, ncaps)
+    else
+        train_words = train_words:long()
+        valid_words = valid_words:long()
+        test_words = test_words:long()
+
+        train_caps = train_caps:long()
+        valid_caps = valid_caps:long()
+        test_caps = test_caps:long()
+    end
 
     nembed_caps = 5
     nhidden = 300
