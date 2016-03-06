@@ -104,9 +104,9 @@ def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('ngramsize', help="n-gram size", const=2, nargs="?", default=2,
+    parser.add_argument('-ngramsize', help="n-gram size", const=2, nargs="?", default=2,
                         type=int)
-    parser.add_argument('dataset', help="Data set", const="PTB", nargs="?", default="PTB",
+    parser.add_argument('-dataset', help="Data set", const="PTB", nargs="?", default="PTB",
                         type=str)
     args = parser.parse_args(arguments)
     ngramsize = args.ngramsize
