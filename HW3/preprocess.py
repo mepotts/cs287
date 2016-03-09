@@ -20,7 +20,12 @@ FILE_PATHS = {"PTB": ("data/train.txt",
                       "data/valid.txt",
                       "data/valid_blanks.txt",
                       "data/test_blanks.txt",
-                      "data/words.dict")}
+                      "data/words.dict"),
+              "PTB1000": ("data/train.1000.txt",
+                          "data/valid.1000.txt",
+                          "data/valid_blanks.txt",
+                          "data/test_blanks.txt",
+                          "data/words.1000.dict")}
 args = {}
 
 word_dict = {}
@@ -38,19 +43,22 @@ def read_word_dict(file_name):
     unk = word_dict["<unk>"]
 
 
-def read_sentences(file_name):
+def read_sentences(file_name, check_found):
     ngramsize = args.ngramsize
     pref = [start_word] * ngramsize
+    suff = [end_word]
 
     features = []
     target = []
+    found = set()
     with codecs.open(file_name, 'r', encoding="utf-8") as f:
         for line in f:
             tokens = line.split()
             if not tokens:
                 continue
             cur_list = []
-            for word in itertools.chain(pref, tokens):
+            for word in itertools.chain(pref, tokens, suff):
+                found.add(word)
                 index = word_dict.get(word, unk)
                 if word != start_word:
                     ngram_list = cur_list[-ngramsize:]
@@ -60,6 +68,10 @@ def read_sentences(file_name):
     assert len(target) == len(features)
     features = np.array(features, dtype=np.int32)
     target = np.array(target, dtype=np.int32)
+    if check_found:
+        for w in word_dict:
+            if w not in found:
+                print w, " not found"
     return features, target
 
 
@@ -119,8 +131,8 @@ def main(arguments):
     nwords = len(word_dict)
     print "nwords", nwords
 
-    train_input, train_output = read_sentences(train_file)
-    valid_input, valid_output = read_sentences(valid_file)
+    train_input, train_output = read_sentences(train_file, True)
+    valid_input, valid_output = read_sentences(valid_file, False)
     valid_blanks_input, valid_blanks_options = read_blanks(valid_blanks_file, True)
     test_blanks_input, test_blanks_options = read_blanks(test_blanks_file, False)
 

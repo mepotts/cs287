@@ -32,12 +32,12 @@ end
 
 function predict_class_linear(x_w, x_c, W_w, W_c, b)
     local y_hat = b:clone()
-    
+
     y_hat:add(W_w:index(2, x_w:long()):sum(2))
     y_hat:add(W_c:index(2, x_c:long()):sum(2))
-    
+
     local _, class = y_hat:max(1) -- get the argmax
-    
+
     return class[1]
 end
 
@@ -60,9 +60,9 @@ end
 
 function predict_class_mlp(x, mlp)
     local preds = mlp:forward(x)
-    
+
     local _, class = preds:max(1) -- get the argmax
-    
+
     return class[1]
 end
 
@@ -145,7 +145,7 @@ function learn_naive_bayes(alpha)
     end
     prior:div(train_output:size(1))
     local b = torch.log(prior)
-    
+
     -- Construct count matrix
     print("Count matrix")
     local F_w = torch.ones(nclasses, nfeatures*nwords):mul(alpha)
@@ -154,7 +154,7 @@ function learn_naive_bayes(alpha)
         local class = train_output[i]
         local x_w = train_words[i]
         local x_c = train_caps[i]
-        
+
         for j = 1, nfeatures do
             local feature_w = x_w[j]
             F_w[class][feature_w] = F_w[class][feature_w] + 1
@@ -162,7 +162,7 @@ function learn_naive_bayes(alpha)
             F_c[class][feature_c] = F_c[class][feature_c] + 1
         end
     end
-    
+
     -- Compute the posterior by normalizing count matrix
     print("Posterior")
     for i = 1, nclasses do
@@ -177,9 +177,9 @@ function learn_naive_bayes(alpha)
             end
         end
     end
-    
+
     return torch.log(F_w), torch.log(F_c), b
-    
+
     -- local W = torch.cat(torch.log(F_w), torch.log(F_c), 2)
 
     -- return W, b
@@ -215,7 +215,7 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
         if downsample > 0 then
             perm = perm:narrow(1, 1, downsample)
         end
-        
+
         local total_err = 0
         for j = 1, perm:size(1) - m, m do
             local sample = perm:narrow(1, j, m):long()
@@ -223,7 +223,7 @@ function minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embedlayer)
             local x2 = train_caps:index(1, sample)
             local x = {x1, x2}
             local y = train_output:index(1, sample)
-            
+
             local err = batch_grad_update(mlp, criterion, x, y, eta, embedlayer)
             total_err = total_err + err
         end
@@ -302,7 +302,7 @@ function learn_multiclass_logistic(lambda, m, eta, epochs)
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
-    
+
     minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
@@ -317,7 +317,7 @@ function learn_neural_network1(lambda, m, eta, epochs)
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
-    
+
     minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
@@ -332,7 +332,7 @@ function learn_neural_network2(lambda, m, eta, epochs)
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
-    
+
     minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
@@ -349,13 +349,13 @@ function learn_neural_network3(lambda, m, eta, epochs)
     mlp:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
     criterion.sizeAverage = false
-    
+
     minibatch_sgd(mlp, criterion, lambda, m, eta, epochs, embed)
     return mlp
 end
 
 
-function main() 
+function main()
     -- Parse input params
     opt = cmd:parse(arg)
     local f = hdf5.open(opt.datafile, 'r')
@@ -417,7 +417,7 @@ function main()
 
     -- local W_w = torch.DoubleTensor(nclasses, nfeatures)
     -- local b = torch.DoubleTensor(nclasses)
-    
+
     print("Time start:", os.clock())
 
     -- Train.
