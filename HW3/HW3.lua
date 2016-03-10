@@ -251,6 +251,11 @@ function batch_grad_update(mlp, criterion, x, y, embedlayer)
     local t = criterion:backward(pred, y)
     mlp:backward(x, t)
     mlp:updateParameters(eta)
+
+    if normalize > 0 then
+        -- Renormalizes across the second dimension
+        embedlayer.weight:renorm(2, 1, 1)
+    end
     return err
 end
 
@@ -281,11 +286,6 @@ function minibatch_sgd(mlp, criterion, embedlayer)
             total_err = total_err + err
         end
         print("Loss", total_err/perm:size(1))
-
-        if normalize > 0 then
-            -- Renormalizes across the second dimension
-            embedlayer.weight:renorm(2, 1, 1)
-        end
 
         local fn = function(x, y) return predict_mlp(x, y, mlp) end
         -- Downsample when estimating perplexity
@@ -370,6 +370,11 @@ function batch_grad_update2(mlp, x, y, embedlayer, sublinear, linear)
         linear.weight[sampling[i]] = linear.weight[sampling[i]] - sublinear.gradWeight[i + m] * eta
         linear.bias[sampling[i]] = linear.bias[sampling[i]] - sublinear.gradBias[i + m] * eta
     end
+
+    if normalize > 0 then
+        -- Renormalizes across the second dimension
+        embedlayer.weight:renorm(2, 1, 1)
+    end
     return err
 end
 
@@ -400,11 +405,6 @@ function minibatch_sgd2(mlp, embedlayer, sublinear, linear)
             total_err = total_err + err
         end
         print("Loss", total_err/perm:size(1))
-
-        if normalize > 0 then
-            -- Renormalizes across the second dimension
-            embedlayer.weight:renorm(2, 1, 1)
-        end
 
         local fn = function(x, y) return predict_mlp2(x, y, mlp, sublinear, linear) end
         -- Downsample when estimating perplexity

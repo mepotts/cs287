@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
-EMBED_FILE = "embedding3.hdf5"
+EMBED_FILE = "embedding4.hdf5"
 WORDS_FILE = "data/words.dict"
 
 data = None
