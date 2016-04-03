@@ -27,6 +27,7 @@ FILE_PATHS = {"PTB": ("data/train.txt",
                           "data/test_blanks.txt",
                           "data/words.1000.dict")}
 args = {}
+nfeatures = None
 
 word_dict = {}
 unk = None
@@ -44,8 +45,7 @@ def read_word_dict(file_name):
 
 
 def read_sentences(file_name, check_found):
-    ngramsize = args.ngramsize
-    pref = [start_word] * ngramsize
+    pref = [start_word] * nfeatures
     suff = [end_word]
 
     features = []
@@ -61,7 +61,7 @@ def read_sentences(file_name, check_found):
                 found.add(word)
                 index = word_dict.get(word, unk)
                 if word != start_word:
-                    ngram_list = cur_list[-ngramsize:]
+                    ngram_list = cur_list[-nfeatures:]
                     features.append(ngram_list)
                     target.append(index)
                 cur_list.append(index)
@@ -76,8 +76,7 @@ def read_sentences(file_name, check_found):
 
 
 def read_blanks(file_name, replace_last):
-    ngramsize = args.ngramsize
-    pref = [start_word] * ngramsize
+    pref = [start_word] * nfeatures
 
     queries = []
     ngrams = []
@@ -98,7 +97,7 @@ def read_blanks(file_name, replace_last):
                     tokens[-1] = "_1_"
                 for word in itertools.chain(pref, tokens[1:]):
                     if word.startswith("_") and word.endswith("_"):
-                        ngram_list = cur_list[-ngramsize:]
+                        ngram_list = cur_list[-nfeatures:]
                         ngrams.append(ngram_list)
                         break
                     index = word_dict.get(word, unk)
@@ -113,6 +112,7 @@ def read_blanks(file_name, replace_last):
 
 def main(arguments):
     global args
+    global nfeatures
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -122,8 +122,10 @@ def main(arguments):
                         type=str)
     args = parser.parse_args(arguments)
     ngramsize = args.ngramsize
+    nfeatures = args.ngramsize - 1
     dataset = args.dataset
     print "ngramsize", ngramsize
+    print "nfeatures", nfeatures
     print "dataset", dataset
     train_file, valid_file, valid_blanks_file, test_blanks_file, word_dict_file = FILE_PATHS[dataset]
 

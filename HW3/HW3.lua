@@ -135,10 +135,13 @@ function predict_smooth(row, out, freqs, totals, uniqs)
     local mle = pred / all
     if row:dim() > 0 and row:size(1) > 1 then
         local uniq = get_multi(uniqs, row)
+        local ret = predict_smooth(row:narrow(1, 2, row:size(1)-1), out, freqs, totals, uniqs)
         if uniq then
             lambda = 1 - uniq / (uniq + all)
-            local ret = predict_smooth(row:narrow(1, 2, row:size(1)-1), out, freqs, totals, uniqs)
             return lambda * mle + (1 - lambda) * ret
+        else
+            -- Did not appear at all, use recurrent value
+            return ret
         end
     end
     return mle
